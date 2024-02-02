@@ -77,7 +77,7 @@
        </spacer>
       </item>
       <item>
-       <widget class="QCheckBox" name="checkBox">
+       <widget class="QCheckBox" name="IndexCheckBox">
         <property name="text">
          <string>Показать индекс</string>
         </property>
