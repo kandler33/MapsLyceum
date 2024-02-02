@@ -1,8 +1,33 @@
-from PyQt5.QtWidgets import QMainWindow, QApplication
+from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QSizePolicy
 from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt
 from PyQt5 import uic
 import requests
 import sys
+
+
+class LongitudeError(ValueError):
+    def __init__(self, longitude):
+        self.longitude = longitude
+        super().__init__(f'longitude value must be between -180 and 180. got: {self.longitude}')
+
+
+class LatitudeError(ValueError):
+    def __init__(self, latitude):
+        self.latitude = latitude
+        super().__init__(f'latitude value must be between -90 and 90. got: {self.latitude}')
+
+
+class ScaleError(ValueError):
+    def __init__(self, scale):
+        self.scale = scale
+        super().__init__(f'scale value must be between 0 and 21. got: {self.scale}')
+
+
+class LayoutError(ValueError):
+    def __init__(self, layout):
+        self.layout = layout
+        super().__init__(f'layout must be in ("map", "sat"). got: {self.layout}')
 
 
 class GeocoderApi:
@@ -17,16 +42,16 @@ class StaticApi:
             size: tuple[int, int] = (450, 450), layout: str = 'map') -> QPixmap:
 
         if longitude < -180 or longitude > 180:
-            raise ValueError(f'longitude value must be between -180 and 180. got: {longitude}')
+            raise LongitudeError(longitude)
 
         if latitude < -90 or latitude > 90:
-            raise ValueError(f'latitude value must be between -90 and 90. got: {latitude}')
+            raise LatitudeError(latitude)
 
         if scale < 0 or scale > 21:
-            raise ValueError(f'scale value must be between 0 and 21. got: {scale}')
+            raise ScaleError(scale)
 
         if layout not in ('map', 'sat'):
-            raise ValueError(f'layout must be in ("map", "sat"). got: {layout}')
+            raise LayoutError(layout)
 
         ll = ','.join(str(i) for i in (longitude, latitude))
         size = ','.join(str(i) for i in size)
@@ -47,6 +72,58 @@ class StaticApi:
         return pixmap
 
 
+class Map(QLabel):
+    def __init__(self, longitude, latitude, scale):
+        super().__init__()
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.static_api = StaticApi()
+        self.longitude = longitude
+        self.latitude = latitude
+        self.scale = scale
+        self.load_pixmap()
+
+    @property
+    def longitude(self):
+        return self._longitude
+
+    @longitude.setter
+    def longitude(self, longitude: float):
+        if longitude < -180 or longitude > 180:
+            raise LongitudeError(longitude)
+
+        self._longitude = longitude
+
+    @property
+    def latitude(self):
+        return self._latitude
+
+    @latitude.setter
+    def latitude(self, latitude: float):
+        if latitude < -90 or latitude > 90:
+            raise LatitudeError(latitude)
+
+        self._latitude = latitude
+
+    @property
+    def scale(self):
+        return self._scale
+
+    @scale.setter
+    def scale(self, scale: int):
+        if scale < 0 or scale > 21:
+            raise ScaleError(scale)
+
+        self._scale = scale
+
+    def load_pixmap(self):
+        pixmap = self.static_api.get(
+                longitude=self.longitude,
+                latitude=self.latitude,
+                scale=self.scale
+            )
+        self.setPixmap(pixmap)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -54,27 +131,31 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('MapsApi')
         self.IndexCheckBox.hide()
         self.label.setText('Формат запроса: [долгота] [широта] [масштаб карты]')
-        self.static_api = StaticApi()
-        pixmap = self.static_api.get(
-            longitude=28.97709,
-            latitude=41.005233,
-            scale=12,
-            layout='map'
-        )
-        self.MapLabel.setPixmap(pixmap)
+        self.map = Map(28.97709, 41.005233, 12)
+        self.mainLayout.addWidget(self.map)
         self.SearchButton.clicked.connect(self.search_button_handler)
+
+    def keyPressEvent(self, event):
+        try:
+            if event.key() == Qt.Key_PageUp:
+                self.map.scale += 1
+                self.map.load_pixmap()
+
+            if event.key() == Qt.Key_PageDown:
+                self.map.scale -= 1
+                self.map.load_pixmap()
+
+        except ValueError as err:
+            self.statusBar().showMessage(str(err))
 
     def search_button_handler(self):
         request = self.SearchLineEdit.text().split()
         try:
             lon, lat, scale = float(request[0]), float(request[1]), int(request[2])
-            pixmap = self.static_api.get(
-                longitude=lon,
-                latitude=lat,
-                scale=scale,
-                layout='map'
-            )
-            self.MapLabel.setPixmap(pixmap)
+            self.map.longitude = lon
+            self.map.latitude = lat
+            self.map.scale = scale
+            self.map.load_pixmap()
 
         except ValueError as err:
             self.statusBar().showMessage(str(err))
