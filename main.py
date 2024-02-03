@@ -115,13 +115,29 @@ class Map(QLabel):
 
         self._scale = scale
 
+    @property
+    def tile_length(self):
+        return 720 / 2 ** self.scale
+
+    @property
+    def tile_height(self):
+        return 360 / 2 ** self.scale
+
     def load_pixmap(self):
         pixmap = self.static_api.get(
                 longitude=self.longitude,
                 latitude=self.latitude,
-                scale=self.scale
+                scale=self.scale,
+                size=(650, 450)
             )
         self.setPixmap(pixmap)
+
+    def move(self, longitude_coef: float = 0, latitude_coef: float = 0):
+        longitude_coef *= 450/350
+        latitude_coef *= 450/350
+        self.longitude += self.tile_length * longitude_coef
+        self.latitude += self.tile_height * latitude_coef
+        self.load_pixmap()
 
 
 class MainWindow(QMainWindow):
@@ -132,6 +148,7 @@ class MainWindow(QMainWindow):
         self.IndexCheckBox.hide()
         self.label.setText('Формат запроса: [долгота] [широта] [масштаб карты]')
         self.map = Map(28.97709, 41.005233, 12)
+        self.setFocus()
         self.mainLayout.addWidget(self.map)
         self.SearchButton.clicked.connect(self.search_button_handler)
 
@@ -141,12 +158,30 @@ class MainWindow(QMainWindow):
                 self.map.scale += 1
                 self.map.load_pixmap()
 
-            if event.key() == Qt.Key_PageDown:
+            elif event.key() == Qt.Key_PageDown:
                 self.map.scale -= 1
                 self.map.load_pixmap()
 
+            elif event.key() == Qt.Key_Up:
+                self.map.move(latitude_coef=0.5)
+
+            elif event.key() == Qt.Key_Down:
+                self.map.move(latitude_coef=-0.5)
+
+            elif event.key() == Qt.Key_Right:
+                self.map.move(longitude_coef=0.5)
+
+            elif event.key() == Qt.Key_Left:
+                self.map.move(longitude_coef=-0.5)
+
         except ValueError as err:
             self.statusBar().showMessage(str(err))
+
+    def mousePressEvent(self, event):
+        if self.collide(self.SearchLineEdit, (event.pos().x(), event.pos().y())):
+            self.SearchLineEdit.setFocus()
+        else:
+            self.setFocus()
 
     def search_button_handler(self):
         request = self.SearchLineEdit.text().split()
@@ -159,6 +194,10 @@ class MainWindow(QMainWindow):
 
         except ValueError as err:
             self.statusBar().showMessage(str(err))
+
+    @staticmethod
+    def collide(obj, pos):
+        return obj.x() <= pos[0] <= obj.x() + obj.width() and obj.y() <= pos[1] <= obj.y() + obj.height()
 
 
 if __name__ == '__main__':
