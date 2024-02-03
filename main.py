@@ -24,10 +24,10 @@ class ScaleError(ValueError):
         super().__init__(f'scale value must be between 0 and 21. got: {self.scale}')
 
 
-class LayoutError(ValueError):
-    def __init__(self, layout):
-        self.layout = layout
-        super().__init__(f'layout must be in ("map", "sat"). got: {self.layout}')
+class LayerError(ValueError):
+    def __init__(self, layer):
+        self.layer = layer
+        super().__init__(f'layer must be in ("map", "sat", "sat,skl"). got: {self.layer}')
 
 
 class GeocoderApi:
@@ -39,7 +39,7 @@ class StaticApi:
         self.server = 'https://static-maps.yandex.ru/1.x'
 
     def get(self, longitude: float, latitude: float, scale: int,
-            size: tuple[int, int] = (450, 450), layout: str = 'map') -> QPixmap:
+            size: tuple[int, int] = (450, 450), layer: str = 'map') -> QPixmap:
 
         if longitude < -180 or longitude > 180:
             raise LongitudeError(longitude)
@@ -50,8 +50,8 @@ class StaticApi:
         if scale < 0 or scale > 21:
             raise ScaleError(scale)
 
-        if layout not in ('map', 'sat'):
-            raise LayoutError(layout)
+        if layer not in ('map', 'sat', 'sat,skl'):
+            raise LayerError(layer)
 
         ll = ','.join(str(i) for i in (longitude, latitude))
         size = ','.join(str(i) for i in size)
@@ -60,7 +60,7 @@ class StaticApi:
             'll': ll,
             'z': scale,
             'size': size,
-            'l': layout
+            'l': layer
         }
         response = requests.get(self.server, params=params)
         if not response:
@@ -73,13 +73,14 @@ class StaticApi:
 
 
 class Map(QLabel):
-    def __init__(self, longitude, latitude, scale):
+    def __init__(self, longitude, latitude, scale, layer):
         super().__init__()
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.static_api = StaticApi()
         self.longitude = longitude
         self.latitude = latitude
         self.scale = scale
+        self.layer = layer
         self.load_pixmap()
 
     @property
@@ -116,6 +117,17 @@ class Map(QLabel):
         self._scale = scale
 
     @property
+    def layer(self):
+        return self._layer
+
+    @layer.setter
+    def layer(self, layer):
+        if layer not in ('map', 'sat', 'sat,skl'):
+            raise LayerError
+
+        self._layer = layer
+
+    @property
     def tile_length(self):
         return 720 / 2 ** self.scale
 
@@ -128,7 +140,8 @@ class Map(QLabel):
                 longitude=self.longitude,
                 latitude=self.latitude,
                 scale=self.scale,
-                size=(650, 450)
+                size=(650, 450),
+                layer=self.layer
             )
         self.setPixmap(pixmap)
 
@@ -147,10 +160,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('MapsApi')
         self.IndexCheckBox.hide()
         self.label.setText('Формат запроса: [долгота] [широта] [масштаб карты]')
-        self.map = Map(28.97709, 41.005233, 12)
+        self.map = Map(28.97709, 41.005233, 12, 'map')
         self.setFocus()
         self.mainLayout.addWidget(self.map)
         self.SearchButton.clicked.connect(self.search_button_handler)
+        self.MapRadioButton.clicked.connect(self.layer_button_handler)
+        self.SatRadioButton.clicked.connect(self.layer_button_handler)
+        self.HybRadioButton.clicked.connect(self.layer_button_handler)
 
     def keyPressEvent(self, event):
         try:
@@ -194,6 +210,15 @@ class MainWindow(QMainWindow):
 
         except ValueError as err:
             self.statusBar().showMessage(str(err))
+
+    def layer_button_handler(self):
+        d = {
+            'Схема': 'map',
+            'Спутник': 'sat',
+            'Гибрид': 'sat,skl'
+        }
+        self.map.layer = d[self.sender().text()]
+        self.map.load_pixmap()
 
     @staticmethod
     def collide(obj, pos):
