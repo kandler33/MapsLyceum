@@ -53,7 +53,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="label_2">
+         <widget class="QLabel" name="AdrressLabel">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
             <horstretch>0</horstretch>
@@ -89,6 +89,13 @@
       </item>
       <item>
        <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <item>
+         <widget class="QPushButton" name="ClearButton">
+          <property name="text">
+           <string>Сброс</string>
+          </property>
+         </widget>
+        </item>
         <item>
          <spacer name="horizontalSpacer_2">
           <property name="orientation">

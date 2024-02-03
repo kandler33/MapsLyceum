@@ -227,6 +227,9 @@ class Map(QLabel):
         self.marks = [mark]
         self.load_pixmap()
 
+    def clear_marks(self):
+        self.marks = []
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -243,6 +246,7 @@ class MainWindow(QMainWindow):
         self.MapRadioButton.clicked.connect(self.layer_button_handler)
         self.SatRadioButton.clicked.connect(self.layer_button_handler)
         self.HybRadioButton.clicked.connect(self.layer_button_handler)
+        self.ClearButton.clicked.connect(self.clear_button_handler)
 
     def keyPressEvent(self, event):
         try:
@@ -310,6 +314,12 @@ class MainWindow(QMainWindow):
         }
         self.map.layer = d[self.sender().text()]
         self.map.load_pixmap()
+
+    def clear_button_handler(self):
+        self.map.clear_marks()
+        self.map.load_pixmap()
+        self.AdrressLabel.setText('')
+        self.SearchLineEdit.setText('')
 
     @staticmethod
     def collide(obj, pos):
