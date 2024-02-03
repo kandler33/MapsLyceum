@@ -226,7 +226,6 @@ class Map(QLabel):
         mark = Mark(longitude, latitude)
         self.marks = [mark]
         self.load_pixmap()
-        self.marks = []
 
 
 class MainWindow(QMainWindow):
