@@ -4,6 +4,8 @@ from PyQt5.QtCore import Qt
 from PyQt5 import uic
 import requests
 import sys
+import re
+from typing import Iterable
 
 
 class LongitudeError(ValueError):
@@ -30,8 +32,64 @@ class LayerError(ValueError):
         super().__init__(f'layer must be in ("map", "sat", "sat,skl"). got: {self.layer}')
 
 
-class GeocoderApi:
+class InvalidParamsError(Exception):
     pass
+
+
+class Mark:
+    def __init__(self, longitude, latitude):
+        self.longitude = longitude
+        self.latitude = latitude
+        self.style = 'comma'
+
+    @property
+    def longitude(self):
+        return self._longitude
+
+    @longitude.setter
+    def longitude(self, longitude: float):
+        if longitude < -180 or longitude > 180:
+            raise LongitudeError(longitude)
+
+        self._longitude = longitude
+
+    @property
+    def latitude(self):
+        return self._latitude
+
+    @latitude.setter
+    def latitude(self, latitude: float):
+        if latitude < -90 or latitude > 90:
+            raise LatitudeError(latitude)
+
+        self._latitude = latitude
+
+    def __str__(self):
+        return f'{self.longitude},{self.latitude},{self.style}'
+
+
+class GeocoderApi:
+    def __init__(self):
+        self.server = 'https://geocode-maps.yandex.ru/1.x'
+        self.apikey = "40d1649f-0493-4b70-98ba-98533de7710b"
+        self.lang = 'ru_RU'
+
+    def get(self, geocode: str):
+        params = {
+            'apikey': self.apikey,
+            'lang': self.lang,
+            'geocode': geocode,
+            'format': 'json'
+        }
+        response = requests.get(self.server, params)
+        if not response:
+            raise InvalidParamsError(response.url)
+
+        json_response = response.json()
+        toponym = json_response["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
+        toponym_address = toponym["metaDataProperty"]["GeocoderMetaData"]["text"]
+        toponym_coordinates = tuple(float(i) for i in toponym["Point"]["pos"].split())
+        return toponym_coordinates, toponym_address
 
 
 class StaticApi:
@@ -39,7 +97,7 @@ class StaticApi:
         self.server = 'https://static-maps.yandex.ru/1.x'
 
     def get(self, longitude: float, latitude: float, scale: int,
-            size: tuple[int, int] = (450, 450), layer: str = 'map') -> QPixmap:
+            size: tuple[int, int] = (450, 450), layer: str = 'map', marks: Iterable[Mark] = None) -> QPixmap:
 
         if longitude < -180 or longitude > 180:
             raise LongitudeError(longitude)
@@ -55,17 +113,19 @@ class StaticApi:
 
         ll = ','.join(str(i) for i in (longitude, latitude))
         size = ','.join(str(i) for i in size)
+        if marks:
+            marks = '~'.join(str(mark) for mark in marks)
 
         params = {
             'll': ll,
             'z': scale,
             'size': size,
-            'l': layer
+            'l': layer,
+            'pt': marks
         }
         response = requests.get(self.server, params=params)
         if not response:
-            print('qw', response.url)
-            raise Exception
+            raise InvalidParamsError(response.url)
 
         pixmap = QPixmap()
         pixmap.loadFromData(response.content)
@@ -81,6 +141,7 @@ class Map(QLabel):
         self.latitude = latitude
         self.scale = scale
         self.layer = layer
+        self.marks = []
         self.load_pixmap()
 
     @property
@@ -136,14 +197,19 @@ class Map(QLabel):
         return 360 / 2 ** self.scale
 
     def load_pixmap(self):
-        pixmap = self.static_api.get(
-                longitude=self.longitude,
-                latitude=self.latitude,
-                scale=self.scale,
-                size=(650, 450),
-                layer=self.layer
-            )
-        self.setPixmap(pixmap)
+        try:
+            pixmap = self.static_api.get(
+                    longitude=self.longitude,
+                    latitude=self.latitude,
+                    scale=self.scale,
+                    size=(650, 450),
+                    layer=self.layer,
+                    marks=self.marks
+                )
+            self.setPixmap(pixmap)
+
+        except InvalidParamsError as err:
+            self.setText(f'unable to load map with url: {err}')
 
     def move(self, longitude_coef: float = 0, latitude_coef: float = 0):
         longitude_coef *= 450/350
@@ -152,6 +218,16 @@ class Map(QLabel):
         self.latitude += self.tile_height * latitude_coef
         self.load_pixmap()
 
+    def set_center(self, longitude, latitude):
+        self.longitude = longitude
+        self.latitude = latitude
+
+    def add_mark(self, longitude, latitude):
+        mark = Mark(longitude, latitude)
+        self.marks = [mark]
+        self.load_pixmap()
+        self.marks = []
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -159,7 +235,8 @@ class MainWindow(QMainWindow):
         uic.loadUi('main.ui', self)
         self.setWindowTitle('MapsApi')
         self.IndexCheckBox.hide()
-        self.label.setText('Формат запроса: [долгота] [широта] [масштаб карты]')
+        self.label.setText('')
+        self.geocode_api = GeocoderApi()
         self.map = Map(28.97709, 41.005233, 12, 'map')
         self.setFocus()
         self.mainLayout.addWidget(self.map)
@@ -200,16 +277,31 @@ class MainWindow(QMainWindow):
             self.setFocus()
 
     def search_button_handler(self):
-        request = self.SearchLineEdit.text().split()
         try:
-            lon, lat, scale = float(request[0]), float(request[1]), int(request[2])
-            self.map.longitude = lon
-            self.map.latitude = lat
-            self.map.scale = scale
-            self.map.load_pixmap()
+            request = self.SearchLineEdit.text()
+            if re.fullmatch(r'\d+.?\d* \d+.?\d* \d+', request):
+                try:
+                    request = request.split()
+                    lon, lat, scale = float(request[0]), float(request[1]), int(request[2])
+                    self.map.longitude = lon
+                    self.map.latitude = lat
+                    self.map.scale = scale
+                    self.map.load_pixmap()
+                    return
 
-        except ValueError as err:
-            self.statusBar().showMessage(str(err))
+                except ValueError as err:
+                    self.statusBar().showMessage(str(err))
+                    return
+
+            try:
+                coords, address = self.geocode_api.get(request)
+                self.map.set_center(*coords)
+                self.map.add_mark(*coords)
+
+            except InvalidParamsError:
+                self.statusBar().showMessage('Ничего не найдено')
+        except Exception as err:
+            print(err.__repr__())
 
     def layer_button_handler(self):
         d = {
