@@ -86,6 +86,8 @@ class GeocoderApi:
             raise InvalidParamsError(response.url)
 
         json_response = response.json()
+        if not json_response["response"]["GeoObjectCollection"]["featureMember"]:
+            raise InvalidParamsError()
         toponym = json_response["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
         toponym_address = toponym["metaDataProperty"]["GeocoderMetaData"]["text"]
         toponym_coordinates = tuple(float(i) for i in toponym["Point"]["pos"].split())
@@ -237,7 +239,6 @@ class MainWindow(QMainWindow):
         uic.loadUi('main.ui', self)
         self.setWindowTitle('MapsApi')
         self.IndexCheckBox.hide()
-        self.label.setText('')
         self.geocode_api = GeocoderApi()
         self.map = Map(28.97709, 41.005233, 12, 'map')
         self.setFocus()
@@ -280,31 +281,29 @@ class MainWindow(QMainWindow):
             self.setFocus()
 
     def search_button_handler(self):
-        try:
-            request = self.SearchLineEdit.text()
-            if re.fullmatch(r'\d+.?\d* \d+.?\d* \d+', request):
-                try:
-                    request = request.split()
-                    lon, lat, scale = float(request[0]), float(request[1]), int(request[2])
-                    self.map.longitude = lon
-                    self.map.latitude = lat
-                    self.map.scale = scale
-                    self.map.load_pixmap()
-                    return
-
-                except ValueError as err:
-                    self.statusBar().showMessage(str(err))
-                    return
-
+        request = self.SearchLineEdit.text()
+        if re.fullmatch(r'\d+.?\d* \d+.?\d* \d+', request):
             try:
-                coords, address = self.geocode_api.get(request)
-                self.map.set_center(*coords)
-                self.map.add_mark(*coords)
+                request = request.split()
+                lon, lat, scale = float(request[0]), float(request[1]), int(request[2])
+                self.map.longitude = lon
+                self.map.latitude = lat
+                self.map.scale = scale
+                self.map.load_pixmap()
+                return
 
-            except InvalidParamsError:
-                self.statusBar().showMessage('Ничего не найдено')
-        except Exception as err:
-            print(err.__repr__())
+            except ValueError as err:
+                self.statusBar().showMessage(str(err))
+                return
+
+        try:
+            coords, address = self.geocode_api.get(request)
+            self.AdrressLabel.setText(address)
+            self.map.set_center(*coords)
+            self.map.add_mark(*coords)
+
+        except InvalidParamsError:
+            self.statusBar().showMessage('Ничего не найдено')
 
     def layer_button_handler(self):
         d = {
