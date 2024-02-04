@@ -90,8 +90,9 @@ class GeocoderApi:
             raise InvalidParamsError()
         toponym = json_response["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
         toponym_address = toponym["metaDataProperty"]["GeocoderMetaData"]["text"]
+        toponym_postal_code = toponym["metaDataProperty"]["GeocoderMetaData"]["Address"].get("postal_code", None)
         toponym_coordinates = tuple(float(i) for i in toponym["Point"]["pos"].split())
-        return toponym_coordinates, toponym_address
+        return toponym_coordinates, toponym_address, toponym_postal_code
 
 
 class StaticApi:
@@ -238,7 +239,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         uic.loadUi('main.ui', self)
         self.setWindowTitle('MapsApi')
-        self.IndexCheckBox.hide()
         self.geocode_api = GeocoderApi()
         self.map = Map(28.97709, 41.005233, 12, 'map')
         self.setFocus()
@@ -297,7 +297,9 @@ class MainWindow(QMainWindow):
                 return
 
         try:
-            coords, address = self.geocode_api.get(request)
+            coords, address, postal_code = self.geocode_api.get(request)
+            if postal_code is not None and self.IndexCheckBox.isChecked():
+                address += ', ' + postal_code
             self.AdrressLabel.setText(address)
             self.map.set_center(*coords)
             self.map.add_mark(*coords)
